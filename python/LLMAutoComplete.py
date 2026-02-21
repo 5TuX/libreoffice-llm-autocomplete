@@ -72,6 +72,7 @@ def _truncate_sentence(text):
 
 # Key codes (com.sun.star.awt.Key)
 KEY_RIGHT = 1026
+KEY_DOWN = 1027  # Ctrl+Right reports as 1027 in XKeyHandler on Windows LO
 KEY_TAB = 1282
 KEY_ESCAPE = 1281
 MOD_CTRL = 2
@@ -164,6 +165,10 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             # on LO Writer/Windows. So we CANNOT use keyPressed for Right Arrow accept.
             # GoRightDispatch handles Right Arrow accept via dispatch interceptor.
             if self._ghost_len > 0:
+                if key == KEY_DOWN and (mods & MOD_CTRL):
+                    _log("ACCEPT word (Ctrl+Right via keyPressed code=1027)")
+                    self._accept_ghost_word()
+                    return True
                 if key == KEY_TAB and (mods & MOD_CTRL):
                     _log("ACCEPT ghost (Ctrl+Tab)")
                     self._accept_ghost()
@@ -369,6 +374,63 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             self._inserting_ghost = False
             self._update_status_label()
 
+    @staticmethod
+    def _find_word_boundary(text):
+        """Find length of first 'word' in ghost text (including trailing space)."""
+        if not text:
+            return 0
+        i, n = 0, len(text)
+        while i < n and text[i] in ' \t':
+            i += 1
+        if i >= n:
+            return n
+        while i < n and text[i] not in ' \t.,;:!?()[]{}':
+            i += 1
+        while i < n and text[i] in '.,;:!?':
+            i += 1
+        if i < n and text[i] == ' ':
+            i += 1
+        return max(1, i)
+
+    def _accept_ghost_word(self):
+        """Accept first word of ghost text, keep remainder as ghost."""
+        if self._ghost_len <= 0:
+            return
+        word_len = self._find_word_boundary(self._ghost_text)
+        if word_len >= self._ghost_len:
+            self._accept_ghost()
+            return
+        accepted = self._ghost_text[:word_len]
+        remaining = self._ghost_text[word_len:]
+        self._remove_ghost()
+        self._inserting_ghost = True
+        try:
+            doc = self._get_doc()
+            if doc is None:
+                return
+            ctrl = doc.getCurrentController()
+            vc = ctrl.getViewCursor()
+            text_obj = doc.getText()
+            ins_cursor = text_obj.createTextCursorByRange(vc.getStart())
+            text_obj.insertString(ins_cursor, accepted, False)
+            self._last_text = self._get_full_text()
+            _log("Ghost word accepted: %r (%d chars), remaining: %d" % (
+                accepted, word_len, len(remaining)))
+        except Exception as e:
+            _log("_accept_ghost_word ERROR: %s" % traceback.format_exc())
+            self._inserting_ghost = False
+            return
+        finally:
+            self._inserting_ghost = False
+        self._insert_ghost(remaining)
+        self._advancing = True
+        if self._advance_timer is not None:
+            self._advance_timer.cancel()
+        advance_ms = self.settings.get("AdvanceMs", 20) / 1000.0
+        self._advance_timer = threading.Timer(advance_ms, self._clear_advancing)
+        self._advance_timer.daemon = True
+        self._advance_timer.start()
+
     # -- Debounce & API ------------------------------------------------------
 
     def _reset_debounce(self):
@@ -535,6 +597,38 @@ class GoRightDispatch(unohelper.Base, XDispatch):
                 pass
 
 
+class GoWordRightDispatch(unohelper.Base, XDispatch):
+    """Intercepts .uno:GoWordRight. Accepts next word of ghost if active, else forwards."""
+
+    def __init__(self, handler, original_dispatch):
+        self._handler = handler
+        self._original = original_dispatch
+
+    def dispatch(self, url, args):
+        self._handler.cancel_debounce()
+        if self._handler._ghost_len > 0:
+            _log("GoWordRightDispatch: ghost active, accepting word")
+            self._handler._accept_ghost_word()
+        elif self._original is not None:
+            self._original.dispatch(url, args)
+        else:
+            _log("GoWordRightDispatch: no original dispatch, ignoring")
+
+    def addStatusListener(self, listener, url):
+        if self._original is not None:
+            try:
+                self._original.addStatusListener(listener, url)
+            except Exception:
+                pass
+
+    def removeStatusListener(self, listener, url):
+        if self._original is not None:
+            try:
+                self._original.removeStatusListener(listener, url)
+            except Exception:
+                pass
+
+
 class NavDismissDispatch(unohelper.Base, XDispatch):
     """Intercepts navigation commands. Dismisses ghost and cancels debounce, then forwards."""
 
@@ -568,7 +662,7 @@ class NavDismissDispatch(unohelper.Base, XDispatch):
 # Navigation commands that should cancel debounce and dismiss ghost
 NAV_COMMANDS = {
     ".uno:GoLeft", ".uno:GoUp", ".uno:GoDown",
-    ".uno:GoWordLeft", ".uno:GoWordRight",
+    ".uno:GoWordLeft",
     ".uno:GoToStartOfLine", ".uno:GoToEndOfLine",
     ".uno:GoToStartOfDoc", ".uno:GoToEndOfDoc",
 }
@@ -602,6 +696,11 @@ class GoRightInterceptor(unohelper.Base, XDispatchProviderInterceptor, XDispatch
             if self._slave is not None:
                 original = self._slave.queryDispatch(url, target, flags)
             return GoRightDispatch(self._handler, original)
+        if url.Complete == ".uno:GoWordRight":
+            original = None
+            if self._slave is not None:
+                original = self._slave.queryDispatch(url, target, flags)
+            return GoWordRightDispatch(self._handler, original)
         if url.Complete in NAV_COMMANDS:
             original = None
             if self._slave is not None:

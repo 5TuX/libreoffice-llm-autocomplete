@@ -355,9 +355,9 @@ def build_panel_ui(panelWin, panel):
     add_button("btn_toggle", btn_label)
 
     # -- Shortcuts help --
-    shortcuts_text = "Right Arrow / Ctrl+Tab: accept\nEscape: dismiss"
+    shortcuts_text = "Right Arrow: accept all\nCtrl+Right: accept word\nEscape: dismiss"
     add_label("lbl_shortcuts", shortcuts_text if is_enabled else "",
-              multiline=True, height=h_lbl * 2)
+              multiline=True, height=h_lbl * 3)
 
     # -- Status label --
     add_label("status_label", "Starting...")
@@ -417,7 +417,7 @@ def build_panel_ui(panelWin, panel):
                     h.dismiss_suggestion()
                 lbl = "Disable Autocomplete" if h.enabled else "Enable Autocomplete"
                 panelWin.getControl("btn_toggle").getModel().Label = lbl
-                sc = "Right Arrow / Ctrl+Tab: accept\nEscape: dismiss" if h.enabled else ""
+                sc = "Right Arrow: accept all\nCtrl+Right: accept word\nEscape: dismiss" if h.enabled else ""
                 panelWin.getControl("lbl_shortcuts").getModel().Label = sc
         except Exception as e:
             _log("on_toggle ERROR: %s" % e)

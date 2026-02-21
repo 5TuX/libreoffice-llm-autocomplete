@@ -11,6 +11,7 @@ Type in Writer, pause briefly, and a gray italic suggestion appears inline. Acce
 | Action | Key |
 |--------|-----|
 | Accept entire suggestion | **Right Arrow** |
+| Accept next word | **Ctrl+Right** |
 | Dismiss suggestion | **Escape** |
 | Type through | Type matching characters (suggestion shrinks) |
 
