@@ -210,7 +210,7 @@ class _CheckboxListener(unohelper.Base, XItemListener):
 SLIDERS = [
     # (key, display_name, min, max, step, unit)
     ("AdvanceMs",      "Advance timer",   5,   100,   5, "ms"),
-    ("DebounceMs",     "Debounce",      100,  3000, 100, "ms"),
+    ("DebounceMs",     "Debounce",       10,  3000,  10, "ms"),
     ("PollDrainInitMs","Poll drain init",200,  5000, 100, "ms"),
     ("PollDrainMs",    "Poll drain",     50,  2000,  50, "ms"),
     ("StatusPollInitMs","Status poll init",500,10000, 500, "ms"),
