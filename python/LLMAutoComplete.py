@@ -159,21 +159,19 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 key, mods, self._ghost_len, self.enabled))
             if not self.enabled:
                 return False
-            if self._ghost_len <= 0:
-                return False
-            if key == KEY_RIGHT:
-                _log("ACCEPT ghost (Right Arrow)")
-                self._accept_ghost()
-                return True
-            if key == KEY_TAB and (mods & MOD_CTRL):
-                _log("ACCEPT ghost (Ctrl+Tab)")
-                self._accept_ghost()
-                return True
-            if key == KEY_ESCAPE:
-                _log("DISMISS ghost (Escape)")
-                self._remove_ghost()
-                self._last_text = self._get_full_text()
-                return True
+            # Note: XKeyHandler reports KeyCode=1026 for BOTH Left and Right Arrow
+            # on LO Writer/Windows. So we CANNOT use keyPressed for Right Arrow accept.
+            # GoRightDispatch handles Right Arrow accept via dispatch interceptor.
+            if self._ghost_len > 0:
+                if key == KEY_TAB and (mods & MOD_CTRL):
+                    _log("ACCEPT ghost (Ctrl+Tab)")
+                    self._accept_ghost()
+                    return True
+                if key == KEY_ESCAPE:
+                    _log("DISMISS ghost (Escape)")
+                    self._remove_ghost()
+                    self._last_text = self._get_full_text()
+                    return True
             return False
         except Exception as e:
             _log("keyPressed ERROR: %s" % e)
