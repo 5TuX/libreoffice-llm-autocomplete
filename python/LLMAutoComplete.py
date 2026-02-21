@@ -72,6 +72,7 @@ def _truncate_sentence(text):
 
 # Key codes (com.sun.star.awt.Key)
 KEY_RIGHT = 1026
+KEY_UP = 1025    # Ctrl+Left reports as 1025 in XKeyHandler on Windows LO (likely)
 KEY_DOWN = 1027  # Ctrl+Right reports as 1027 in XKeyHandler on Windows LO
 KEY_TAB = 1282
 KEY_ESCAPE = 1281
@@ -103,6 +104,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         self._saved_color = None
         self._debounce_context = None
         self._request_context = None
+        self._accepted_words = []  # stack of accepted word strings for Ctrl+Left undo
         self._rebuild_client()
 
     # -- Public API ----------------------------------------------------------
@@ -168,6 +170,10 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 if key == KEY_DOWN and (mods & MOD_CTRL):
                     _log("ACCEPT word (Ctrl+Right via keyPressed code=1027)")
                     self._accept_ghost_word()
+                    return True
+                if key == KEY_UP and (mods & MOD_CTRL) and self._accepted_words:
+                    _log("UN-ACCEPT word (Ctrl+Left via keyPressed code=%d)" % key)
+                    self._unaccept_ghost_word()
                     return True
                 if key == KEY_TAB and (mods & MOD_CTRL):
                     _log("ACCEPT ghost (Ctrl+Tab)")
@@ -293,11 +299,13 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             self._inserting_ghost = False
             self._update_status_label()
 
-    def _remove_ghost(self):
+    def _remove_ghost(self, keep_stack=False):
         if self._ghost_len <= 0:
             self._ghost_text = ""
             self._ghost_len = 0
             self._ghost_cursor = None
+            if not keep_stack:
+                self._accepted_words = []
             return
         self._inserting_ghost = True
         try:
@@ -331,6 +339,8 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             self._ghost_cursor = None
             self._saved_color = None
             self._inserting_ghost = False
+            if not keep_stack:
+                self._accepted_words = []
             self._update_status_label()
 
     def _accept_ghost(self):
@@ -372,6 +382,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             self._ghost_cursor = None
             self._saved_color = None
             self._inserting_ghost = False
+            self._accepted_words = []
             self._update_status_label()
 
     @staticmethod
@@ -402,7 +413,8 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             return
         accepted = self._ghost_text[:word_len]
         remaining = self._ghost_text[word_len:]
-        self._remove_ghost()
+        self._accepted_words.append(accepted)
+        self._remove_ghost(keep_stack=True)
         self._inserting_ghost = True
         try:
             doc = self._get_doc()
@@ -423,6 +435,41 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         finally:
             self._inserting_ghost = False
         self._insert_ghost(remaining)
+        self._advancing = True
+        if self._advance_timer is not None:
+            self._advance_timer.cancel()
+        advance_ms = self.settings.get("AdvanceMs", 20) / 1000.0
+        self._advance_timer = threading.Timer(advance_ms, self._clear_advancing)
+        self._advance_timer.daemon = True
+        self._advance_timer.start()
+
+    def _unaccept_ghost_word(self):
+        """Reverse last word accept: delete from real text, prepend to ghost."""
+        if not self._accepted_words:
+            return
+        word = self._accepted_words.pop()
+        remaining = self._ghost_text
+        self._remove_ghost(keep_stack=True)
+        self._inserting_ghost = True
+        try:
+            doc = self._get_doc()
+            if doc is None:
+                return
+            ctrl = doc.getCurrentController()
+            vc = ctrl.getViewCursor()
+            text_obj = doc.getText()
+            del_cursor = text_obj.createTextCursorByRange(vc.getStart())
+            del_cursor.goLeft(len(word), True)
+            del_cursor.setString("")
+            self._last_text = self._get_full_text()
+            _log("Ghost word un-accepted: %r, new ghost: %d chars" % (word, len(word) + len(remaining)))
+        except Exception as e:
+            _log("_unaccept_ghost_word ERROR: %s" % traceback.format_exc())
+            self._inserting_ghost = False
+            return
+        finally:
+            self._inserting_ghost = False
+        self._insert_ghost(word + remaining)
         self._advancing = True
         if self._advance_timer is not None:
             self._advance_timer.cancel()
@@ -490,6 +537,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                     continue
                 if self._ghost_len > 0:
                     self._remove_ghost()
+                self._accepted_words = []
                 self._last_text = self._get_full_text()
                 self._insert_ghost(suggestion)
             except queue.Empty:
@@ -652,6 +700,38 @@ class GoWordRightDispatch(unohelper.Base, XDispatch):
                 pass
 
 
+class GoWordLeftDispatch(unohelper.Base, XDispatch):
+    """Intercepts .uno:GoWordLeft. Un-accepts last word if stack non-empty, else forwards."""
+
+    def __init__(self, handler, original_dispatch):
+        self._handler = handler
+        self._original = original_dispatch
+
+    def dispatch(self, url, args):
+        self._handler.cancel_debounce()
+        if self._handler._ghost_len > 0 and self._handler._accepted_words:
+            _log("GoWordLeftDispatch: ghost active + stack, un-accepting word")
+            self._handler._unaccept_ghost_word()
+        elif self._original is not None:
+            self._original.dispatch(url, args)
+        else:
+            _log("GoWordLeftDispatch: no original dispatch, ignoring")
+
+    def addStatusListener(self, listener, url):
+        if self._original is not None:
+            try:
+                self._original.addStatusListener(listener, url)
+            except Exception:
+                pass
+
+    def removeStatusListener(self, listener, url):
+        if self._original is not None:
+            try:
+                self._original.removeStatusListener(listener, url)
+            except Exception:
+                pass
+
+
 class NavDismissDispatch(unohelper.Base, XDispatch):
     """Intercepts navigation commands. Dismisses ghost and cancels debounce, then forwards."""
 
@@ -685,7 +765,6 @@ class NavDismissDispatch(unohelper.Base, XDispatch):
 # Navigation commands that should cancel debounce and dismiss ghost
 NAV_COMMANDS = {
     ".uno:GoLeft", ".uno:GoUp", ".uno:GoDown",
-    ".uno:GoWordLeft",
     ".uno:GoToStartOfLine", ".uno:GoToEndOfLine",
     ".uno:GoToStartOfDoc", ".uno:GoToEndOfDoc",
 }
@@ -724,6 +803,11 @@ class GoRightInterceptor(unohelper.Base, XDispatchProviderInterceptor, XDispatch
             if self._slave is not None:
                 original = self._slave.queryDispatch(url, target, flags)
             return GoWordRightDispatch(self._handler, original)
+        if url.Complete == ".uno:GoWordLeft":
+            original = None
+            if self._slave is not None:
+                original = self._slave.queryDispatch(url, target, flags)
+            return GoWordLeftDispatch(self._handler, original)
         if url.Complete in NAV_COMMANDS:
             original = None
             if self._slave is not None:
