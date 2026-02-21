@@ -1,0 +1,32 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build .oxt
+        run: |
+          zip -r LLMAutocomplete.oxt \
+            META-INF/ \
+            description.xml \
+            description-en.txt \
+            description/ \
+            Jobs.xcu \
+            Factory.xcu \
+            Sidebar.xcu \
+            empty_dialog.xdl \
+            images/ \
+            python/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LLMAutocomplete.oxt
+          generate_release_notes: true

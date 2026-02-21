@@ -1,0 +1,5 @@
+*.oxt
+*.pyc
+__pycache__/
+*.log
+settings.json

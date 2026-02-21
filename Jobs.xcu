@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:component-data
+  xmlns:oor="http://openoffice.org/2001/registry"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  oor:name="Jobs"
+  oor:package="org.openoffice.Office">
+
+  <node oor:name="Jobs">
+    <node oor:name="com.example.llmac.Main" oor:op="replace">
+      <prop oor:name="Service" oor:type="xs:string">
+        <value>com.example.llmac.Main</value>
+      </prop>
+    </node>
+  </node>
+
+  <node oor:name="Events">
+    <node oor:name="onFirstVisibleTask" oor:op="replace">
+      <node oor:name="JobList">
+        <node oor:name="com.example.llmac.Main" oor:op="replace">
+          <prop oor:name="JobService" oor:type="xs:string">
+            <value>com.example.llmac.Main</value>
+          </prop>
+        </node>
+      </node>
+    </node>
+  </node>
+
+</oor:component-data>

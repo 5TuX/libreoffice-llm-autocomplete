@@ -1,0 +1,11 @@
+LLM Autocomplete for LibreOffice Writer
+
+Provides real-time AI-powered ghost text autocomplete (à la GitHub Copilot)
+using Anthropic Claude or any OpenAI-compatible API.
+
+Features:
+- Ghost text suggestions (gray, italic) as you type
+- Tab/Right arrow to accept, Escape to dismiss
+- Configurable API key, model, base URL, debounce delay
+- Sidebar settings panel
+- Works with Anthropic Claude and OpenAI-compatible APIs
