@@ -450,14 +450,19 @@ def build_panel_ui(panelWin, panel):
         h = _get_handler()
         if h is not None:
             h.set_ai_highlight(enabled)
-            # Nudge zoom +1/-1 to force LO to redraw all styled chars immediately
+            # Nudge zoom +1/-1 to force LO to redraw all styled chars.
+            # Wrap in _inserting_ghost so ZoomValue changes don't fire modified().
             try:
                 doc = h._get_doc()
                 if doc:
-                    vs = doc.getCurrentController().ViewSettings
-                    z = vs.ZoomValue
-                    vs.ZoomValue = z + 1
-                    vs.ZoomValue = z
+                    h._inserting_ghost = True
+                    try:
+                        vs = doc.getCurrentController().ViewSettings
+                        z = vs.ZoomValue
+                        vs.ZoomValue = z + 1
+                        vs.ZoomValue = z
+                    finally:
+                        h._inserting_ghost = False
             except Exception:
                 pass
 

@@ -775,6 +775,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
 
     def set_ai_highlight(self, enabled):
         self.settings["HighlightAI"] = enabled
+        self.cancel_debounce()
         doc = self._get_doc()
         if doc:
             self._inserting_ghost = True
