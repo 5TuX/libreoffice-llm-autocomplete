@@ -777,7 +777,11 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         self.settings["HighlightAI"] = enabled
         doc = self._get_doc()
         if doc:
-            self._ensure_ai_style(doc)
+            self._inserting_ghost = True
+            try:
+                self._ensure_ai_style(doc)
+            finally:
+                self._inserting_ghost = False
 
 
 class GoRightDispatch(unohelper.Base, XDispatch):
