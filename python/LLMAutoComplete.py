@@ -305,9 +305,14 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
 
         Called on every normal keystroke (no ghost active).  Handles two cases:
         1. Cursor still carries AI/ghost style (advancing blocked terminal reset)
+           → reset cursor only; do NOT strip the char to the left (could be
+             legitimate AI text that the user is backspacing toward)
         2. Cursor was reset but LO inherited AI style from adjacent text anyway
            (_cleanup_next_char flag set by _reset_cursor_style)
+           → also strip the just-typed char to the left of cursor
         """
+        cleanup = self._cleanup_next_char
+        self._cleanup_next_char = False
         try:
             doc = self._get_doc()
             if doc is None:
@@ -315,18 +320,20 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             vc = doc.getCurrentController().getViewCursor()
             cursor_style = vc.getPropertyValue("CharStyleName")
             needs_cursor_fix = cursor_style in (AI_STYLE, GHOST_STYLE)
-            needs_char_fix = needs_cursor_fix or self._cleanup_next_char
-            self._cleanup_next_char = False
 
-            if not needs_cursor_fix and not needs_char_fix:
+            if not needs_cursor_fix and not cleanup:
                 return
 
             self._inserting_ghost = True
             try:
                 if needs_cursor_fix:
-                    self._reset_cursor_style(vc)
-                    self._cleanup_next_char = False  # reset already re-set it; clear again
-                if needs_char_fix:
+                    # Reset cursor directly (without _reset_cursor_style) so we
+                    # don't re-arm _cleanup_next_char when near legitimate AI text.
+                    vc.setPropertyToDefault("CharStyleName")
+                    if self._saved_color is not None:
+                        vc.setPropertyValue("CharColor", self._saved_color)
+                if cleanup:
+                    # Strip the just-typed char (may have inherited AI style).
                     text_obj = doc.getText()
                     fix = text_obj.createTextCursorByRange(vc.getStart())
                     if fix.goLeft(1, True):
