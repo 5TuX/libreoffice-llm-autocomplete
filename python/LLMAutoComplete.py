@@ -101,6 +101,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         self._doc_ref = None
         self._saved_color = None
         self._debounce_context = None
+        self._request_context = None
         self._rebuild_client()
 
     # -- Public API ----------------------------------------------------------
@@ -397,6 +398,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 client = self._client
             if client is None:
                 return
+            self._request_context = context_text
             self._querying = True
             self._last_error = ""
             self._update_status_label()
@@ -420,6 +422,10 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         while not self._ui_queue.empty():
             try:
                 suggestion = self._ui_queue.get_nowait()
+                current_ctx = self._get_context_text()
+                if self._request_context and not current_ctx.startswith(self._request_context):
+                    _log("Discarding suggestion: cursor moved since request")
+                    continue
                 if self._ghost_len > 0:
                     self._remove_ghost()
                 self._last_text = self._get_full_text()
