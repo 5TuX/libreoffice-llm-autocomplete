@@ -71,8 +71,8 @@ def _truncate_sentence(text):
     return text
 
 # Key codes (com.sun.star.awt.Key)
+# Windows LO quirk: Ctrl+Left=1026+CTRL, Ctrl+Right=1027+CTRL (not normal arrow codes)
 KEY_RIGHT = 1026
-KEY_UP = 1025    # Ctrl+Left reports as 1025 in XKeyHandler on Windows LO (likely)
 KEY_DOWN = 1027  # Ctrl+Right reports as 1027 in XKeyHandler on Windows LO
 KEY_TAB = 1282
 KEY_ESCAPE = 1281
@@ -171,10 +171,16 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                     _log("ACCEPT word (Ctrl+Right via keyPressed code=1027)")
                     self._accept_ghost_word()
                     return True
-                if key == KEY_UP and (mods & MOD_CTRL) and self._accepted_words:
-                    _log("UN-ACCEPT word (Ctrl+Left via keyPressed code=%d)" % key)
-                    self._unaccept_ghost_word()
-                    return True
+                if key == KEY_RIGHT and (mods & MOD_CTRL):
+                    if self._accepted_words:
+                        _log("UN-ACCEPT word (Ctrl+Left via keyPressed code=%d)" % key)
+                        self._unaccept_ghost_word()
+                        return True
+                    else:
+                        _log("DISMISS ghost (Ctrl+Left, stack empty)")
+                        self._remove_ghost()
+                        self._last_text = self._get_full_text()
+                        return False  # let default Ctrl+Left navigation happen
                 if key == KEY_TAB and (mods & MOD_CTRL):
                     _log("ACCEPT ghost (Ctrl+Tab)")
                     self._accept_ghost()
@@ -712,6 +718,11 @@ class GoWordLeftDispatch(unohelper.Base, XDispatch):
         if self._handler._ghost_len > 0 and self._handler._accepted_words:
             _log("GoWordLeftDispatch: ghost active + stack, un-accepting word")
             self._handler._unaccept_ghost_word()
+        elif self._handler._ghost_len > 0:
+            _log("GoWordLeftDispatch: stack empty, dismissing ghost")
+            self._handler.dismiss_suggestion()
+            if self._original is not None:
+                self._original.dispatch(url, args)
         elif self._original is not None:
             self._original.dispatch(url, args)
         else:
