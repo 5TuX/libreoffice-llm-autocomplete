@@ -14,6 +14,7 @@ DEFAULTS = {
     "MaxContextChars": 500,
     "MaxTokens": 80,
     "SingleSentence": True,
+    "HighlightAI": False,
     "AdvanceMs": 20,
     "PollDrainInitMs": 1000,
     "PollDrainMs": 300,

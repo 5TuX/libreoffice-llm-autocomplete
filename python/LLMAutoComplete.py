@@ -48,6 +48,8 @@ from settings_store import load_settings, save_settings  # noqa: E402
 
 GHOST_STYLE = "LLMSuggestion"
 GHOST_COLOR = 0xAAAAAA
+AI_STYLE = "AIGenerated"
+AI_HIGHLIGHT_COLOR = 0xC8F7C5  # pastel green
 
 
 def _lighten_color(color, factor=0.6):
@@ -105,6 +107,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         self._debounce_context = None
         self._request_context = None
         self._accepted_words = []  # stack of accepted word strings for Ctrl+Left undo
+        self._cleanup_next_char = False  # strip AI style from the next typed char
         self._rebuild_client()
 
     # -- Public API ----------------------------------------------------------
@@ -213,6 +216,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             if self._ghost_len > 0:
                 self._handle_modification_with_ghost()
             else:
+                self._strip_leaked_style()
                 self._reset_debounce()
         except Exception as e:
             _log("modified() ERROR: %s" % e)
@@ -242,6 +246,21 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 if current_ghost.startswith(typed):
                     remaining = current_ghost[len(typed):]
                     self._last_text = new_text
+                    # Tag write-through chars with AI style
+                    # Wrap in _inserting_ghost so modified() from style changes is suppressed
+                    self._inserting_ghost = True
+                    try:
+                        ctrl = doc.getCurrentController()
+                        vc = ctrl.getViewCursor()
+                        text_obj = doc.getText()
+                        ai_cursor = text_obj.createTextCursorByRange(vc.getStart())
+                        ai_cursor.goLeft(len(typed), True)
+                        self._ensure_ai_style(doc)
+                        ai_cursor.setPropertyValue("CharStyleName", AI_STYLE)
+                    except Exception as e:
+                        _log("Write-through AI tag ERROR: %s" % e)
+                    finally:
+                        self._inserting_ghost = False
                     if remaining:
                         self._insert_ghost(remaining)
                         self._advancing = True
@@ -253,6 +272,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                         self._advance_timer.start()
                     else:
                         _log("Ghost fully consumed by typing")
+                        self._reset_cursor_style(vc)
                     return
                 else:
                     _log("Typed chars don't match ghost, dismissing")
@@ -266,6 +286,56 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
     def _clear_advancing(self):
         self._advancing = False
         _log("Advancing flag cleared")
+
+    def _reset_cursor_style(self, vc):
+        """Reset view cursor formatting so next typed char uses default style."""
+        try:
+            vc.setPropertyToDefault("CharStyleName")
+            if self._saved_color is not None:
+                vc.setPropertyValue("CharColor", self._saved_color)
+        except Exception:
+            pass
+        # LO still inherits style from adjacent AI text even after cursor reset,
+        # so flag that the next typed char must be stripped too.
+        self._cleanup_next_char = True
+
+    def _strip_leaked_style(self):
+        """Safety net: strip AI/ghost style from cursor and just-typed char.
+
+        Called on every normal keystroke (no ghost active).  Handles two cases:
+        1. Cursor still carries AI/ghost style (advancing blocked terminal reset)
+        2. Cursor was reset but LO inherited AI style from adjacent text anyway
+           (_cleanup_next_char flag set by _reset_cursor_style)
+        """
+        try:
+            doc = self._get_doc()
+            if doc is None:
+                return
+            vc = doc.getCurrentController().getViewCursor()
+            cursor_style = vc.getPropertyValue("CharStyleName")
+            needs_cursor_fix = cursor_style in (AI_STYLE, GHOST_STYLE)
+            needs_char_fix = needs_cursor_fix or self._cleanup_next_char
+            self._cleanup_next_char = False
+
+            if not needs_cursor_fix and not needs_char_fix:
+                return
+
+            self._inserting_ghost = True
+            try:
+                if needs_cursor_fix:
+                    self._reset_cursor_style(vc)
+                    self._cleanup_next_char = False  # reset already re-set it; clear again
+                if needs_char_fix:
+                    text_obj = doc.getText()
+                    fix = text_obj.createTextCursorByRange(vc.getStart())
+                    if fix.goLeft(1, True):
+                        cs = fix.getPropertyValue("CharStyleName")
+                        if cs in (AI_STYLE, GHOST_STYLE):
+                            fix.setPropertyToDefault("CharStyleName")
+            finally:
+                self._inserting_ghost = False
+        except Exception:
+            pass
 
     def _insert_ghost(self, text):
         _log("_insert_ghost: %r" % text[:80])
@@ -329,13 +399,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 cursor.goRight(self._ghost_len, True)
                 cursor.setString("")
 
-            vc.setPropertyToDefault("CharStyleName")
-            # Restore original text color on cursor
-            if self._saved_color is not None:
-                try:
-                    vc.setPropertyValue("CharColor", self._saved_color)
-                except Exception:
-                    pass
+            self._reset_cursor_style(vc)
 
             _log("Ghost text removed: %d chars" % self._ghost_len)
         except Exception as e:
@@ -366,7 +430,8 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 text_obj = doc.getText()
                 gc = text_obj.createTextCursorByRange(vc.getStart())
                 gc.goRight(self._ghost_len, True)
-            gc.setPropertyToDefault("CharStyleName")
+            self._ensure_ai_style(doc)
+            gc.setPropertyValue("CharStyleName", AI_STYLE)
             # Restore saved color on the accepted text AND view cursor
             if self._saved_color is not None:
                 try:
@@ -379,6 +444,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                     vc.setPropertyValue("CharColor", self._saved_color)
                 except Exception:
                     pass
+            self._reset_cursor_style(vc)
             _log("Ghost text accepted: %d chars" % self._ghost_len)
             self._last_text = self._get_prefix_text()
         except Exception as e:
@@ -432,6 +498,11 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             text_obj = doc.getText()
             ins_cursor = text_obj.createTextCursorByRange(vc.getStart())
             text_obj.insertString(ins_cursor, accepted, False)
+            # Tag accepted word with AI style
+            ai_cursor = text_obj.createTextCursorByRange(vc.getStart())
+            ai_cursor.goLeft(len(accepted), True)
+            self._ensure_ai_style(doc)
+            ai_cursor.setPropertyValue("CharStyleName", AI_STYLE)
             self._last_text = self._get_prefix_text()
             _log("Ghost word accepted: %r (%d chars), remaining: %d" % (
                 accepted, word_len, len(remaining)))
@@ -656,6 +727,34 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             s.CharPosture = uno.Enum("com.sun.star.awt.FontSlant", "ITALIC")
         except Exception:
             pass
+
+    def _ensure_ai_style(self, doc):
+        try:
+            styles = doc.getStyleFamilies().getByName("CharacterStyles")
+            if not styles.hasByName(AI_STYLE):
+                style = doc.createInstance("com.sun.star.style.CharacterStyle")
+                styles.insertByName(AI_STYLE, style)
+            s = styles.getByName(AI_STYLE)
+            if self.settings.get("HighlightAI", False):
+                s.CharBackColor = AI_HIGHLIGHT_COLOR
+                s.CharBackTransparent = False
+            else:
+                # Reset to defaults — just setting CharBackTransparent=True
+                # leaves an explicit CharBackColor on the style which corrupts
+                # character rendering (everything turns black)
+                for prop in ("CharBackColor", "CharBackTransparent", "CharHighlight"):
+                    try:
+                        s.setPropertyToDefault(prop)
+                    except Exception:
+                        pass
+        except Exception as e:
+            _log("_ensure_ai_style ERROR: %s" % e)
+
+    def set_ai_highlight(self, enabled):
+        self.settings["HighlightAI"] = enabled
+        doc = self._get_doc()
+        if doc:
+            self._ensure_ai_style(doc)
 
 
 class GoRightDispatch(unohelper.Base, XDispatch):
@@ -919,6 +1018,7 @@ class DocumentEventListener(unohelper.Base, XEventListener):
                 self._registered_docs.add(doc_id)
                 self.handler._doc_ref = doc
                 self.handler._last_text = self.handler._get_prefix_text()
+                self.handler._ensure_ai_style(doc)
                 _log("XModifyListener registered on doc (%s), id=%d" % (reason, doc_id))
 
             ctrl = doc.getCurrentController()

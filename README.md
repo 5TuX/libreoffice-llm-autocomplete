@@ -9,7 +9,8 @@ AI-powered writing suggestions for LibreOffice Writer, similar to GitHub Copilot
 - **Inline suggestions** -- gray italic text appears at your cursor as you type
 - **Accept all or word-by-word** -- grab the whole suggestion or scrub through it word by word
 - **Undo word accept** -- went too far? Ctrl+Left puts words back into the suggestion
-- **Type-through** -- keep typing and the suggestion shrinks to match
+- **Type-through** -- keep typing and the suggestion shrinks to match; typed characters are automatically tagged as AI-generated
+- **Highlight AI-generated text** -- toggle a green background on accepted/typed-through AI text to see exactly what came from the model
 - **Context-aware** -- uses text before *and* after your cursor for smarter suggestions
 - **Works with any provider** -- Claude, ChatGPT, Ollama (free & local), or any compatible API
 - **Configurable sidebar** -- change settings without leaving Writer
@@ -61,6 +62,7 @@ The sidebar lets you configure:
 - **Max tokens** -- suggestion length (default: 80)
 - **Max context chars** -- how much surrounding text to send (default: 500)
 - **Single sentence** -- limit suggestions to one sentence (on by default)
+- **Highlight AI-generated text** -- toggle green background on AI text (off by default)
 
 Advanced timer settings are available under the **Debugging** section for fine-tuning responsiveness.
 

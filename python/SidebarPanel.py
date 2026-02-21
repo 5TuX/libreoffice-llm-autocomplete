@@ -34,7 +34,7 @@ try:
     from com.sun.star.lang import XComponent
     from com.sun.star.ui import XUIElement, XToolPanel, XSidebarPanel, LayoutSize
     from com.sun.star.ui.UIElementType import TOOLPANEL as UET_TOOLPANEL
-    from com.sun.star.awt import XActionListener, XAdjustmentListener
+    from com.sun.star.awt import XActionListener, XAdjustmentListener, XItemListener
     _log("UNO interfaces imported OK")
 except Exception as e:
     _log("FAILED to import UNO interfaces: %s" % e)
@@ -186,6 +186,20 @@ class _SliderListener(unohelper.Base, XAdjustmentListener):
             self._label_model.Label = self._fmt % event.Value
         except Exception:
             pass
+
+    def disposing(self, event):
+        pass
+
+
+class _CheckboxListener(unohelper.Base, XItemListener):
+    def __init__(self, callback):
+        self._cb = callback
+
+    def itemStateChanged(self, event):
+        try:
+            self._cb(event.Selected == 1)
+        except Exception as e:
+            _log("_CheckboxListener ERROR: %s" % e)
 
     def disposing(self, event):
         pass
@@ -366,6 +380,10 @@ def build_panel_ui(panelWin, panel):
     add_checkbox("chk_single_sentence", "Single sentence only",
                  settings.get("SingleSentence", True))
 
+    # -- Highlight AI text checkbox --
+    add_checkbox("chk_highlight_ai", "Highlight AI-generated text",
+                 settings.get("HighlightAI", False))
+
     # -- API Settings section toggle --
     add_button("btn_section_api", "+ API Settings", height=16, bold=True)
 
@@ -426,6 +444,18 @@ def build_panel_ui(panelWin, panel):
         panelWin.getControl("btn_toggle").addActionListener(_ButtonListener(on_toggle))
     except Exception as e:
         _log("Wire toggle ERROR: %s" % e)
+
+    # -- Highlight AI checkbox listener --
+    def on_highlight_toggle(enabled):
+        h = _get_handler()
+        if h is not None:
+            h.set_ai_highlight(enabled)
+
+    try:
+        panelWin.getControl("chk_highlight_ai").addItemListener(
+            _CheckboxListener(on_highlight_toggle))
+    except Exception as e:
+        _log("Wire highlight checkbox ERROR: %s" % e)
 
     # -- Section toggles --
     def _make_section_toggler(section_name):
@@ -507,6 +537,7 @@ def build_panel_ui(panelWin, panel):
                 "MaxTokens":       _get_int("max_tokens", 80),
                 "MaxContextChars": _get_int("max_context_chars", 500),
                 "SingleSentence":  _get_check("chk_single_sentence"),
+                "HighlightAI":     _get_check("chk_highlight_ai"),
                 "AdvanceMs":       _get_slider("AdvanceMs", 20),
                 "DebounceMs":      _get_slider("DebounceMs", 600),
                 "PollDrainInitMs": _get_slider("PollDrainInitMs", 1000),
