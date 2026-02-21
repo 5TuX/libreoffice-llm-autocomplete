@@ -1,19 +1,17 @@
 # LLM Autocomplete for LibreOffice Writer
 
-Real-time AI-powered ghost text autocomplete for LibreOffice Writer, similar to GitHub Copilot. Works with Anthropic Claude, OpenAI, or any compatible API including local models via Ollama.
+AI-powered writing suggestions for LibreOffice Writer, similar to GitHub Copilot. Type naturally and get inline completions from Claude, ChatGPT, or a free local model.
 
 ![LibreOffice Writer with ghost text suggestion](https://img.shields.io/badge/LibreOffice-7.x%2B-green) ![License: MIT](https://img.shields.io/badge/License-MIT-blue)
 
 ## Features
 
-- **Inline ghost text** -- gray italic suggestions appear at your cursor as you type
-- **Word-by-word accept** -- Ctrl+Right accepts one word at a time (Copilot-style)
-- **Type-through** -- keep typing and the suggestion shrinks as you match it
-- **Bidirectional context** -- when cursor is mid-document, sends text before AND after cursor for smarter infill suggestions
-- **Stale suggestion guard** -- discards suggestions if you moved the cursor while the API was responding
-- **Multi-provider** -- Anthropic Claude, OpenAI, Ollama, or any OpenAI-compatible endpoint
-- **Sidebar panel** -- configure API key, model, timers, and see live status
-- **Privacy-first** -- no telemetry, no data collection; use Ollama for fully local inference
+- **Inline suggestions** -- gray italic text appears at your cursor as you type
+- **Accept all or word-by-word** -- grab the whole suggestion or just the next word
+- **Type-through** -- keep typing and the suggestion shrinks to match
+- **Context-aware** -- uses text before *and* after your cursor for smarter suggestions
+- **Works with any provider** -- Claude, ChatGPT, Ollama (free & local), or any compatible API
+- **Configurable sidebar** -- change settings without leaving Writer
 
 ## Keyboard Shortcuts
 
@@ -22,151 +20,110 @@ Real-time AI-powered ghost text autocomplete for LibreOffice Writer, similar to 
 | Accept entire suggestion | **Right Arrow** |
 | Accept next word | **Ctrl+Right** |
 | Dismiss suggestion | **Escape** |
-| Type through | Type matching characters (suggestion shrinks) |
+| Type through | Just keep typing |
 
-Navigation keys (Left Arrow, Up, Down, Home, End, Ctrl+Left) automatically dismiss the current suggestion.
+Any navigation key (arrows, Home, End) automatically dismisses the suggestion.
 
 ## Install
 
-### From Release (easiest)
-
-1. Download `LLMAutocomplete.oxt` from [Releases](../../releases)
-2. Double-click the `.oxt` file, or open LibreOffice > **Tools > Extension Manager > Add**
+1. Download `LLMAutocomplete.oxt` from the [Releases page](../../releases)
+2. Double-click the file, or open LibreOffice > **Tools > Extension Manager > Add**
 3. Restart LibreOffice
 
-### From Source
+## Setup
+
+1. In Writer, open **View > Sidebar**
+2. Click the **LLM Autocomplete** panel
+3. Expand **API Settings** and enter your API key
+4. Click **Save Settings**
+5. Start typing!
+
+### Which provider should I use?
+
+| Provider | Cost | Setup |
+|----------|------|-------|
+| **Anthropic Claude** (recommended) | ~$0.001/suggestion | Get a key at [console.anthropic.com](https://console.anthropic.com) |
+| **OpenAI / ChatGPT** | Similar | Get a key at [platform.openai.com](https://platform.openai.com). Set Base URL to `https://api.openai.com/v1` |
+| **Ollama** (free, private) | Free | Install [Ollama](https://ollama.com), set Base URL to `http://localhost:11434/v1`, leave API key blank |
+
+### Settings
+
+The sidebar lets you configure:
+
+- **API Key** -- your provider's key (stored locally only)
+- **Model** -- which model to use (default: `claude-haiku-4-5-20251001`, the fastest/cheapest)
+- **Base URL** -- API endpoint (change this for OpenAI or Ollama)
+- **Max tokens** -- suggestion length (default: 80)
+- **Max context chars** -- how much surrounding text to send (default: 500)
+- **Single sentence** -- limit suggestions to one sentence (on by default)
+
+Advanced timer settings are available under the **Debugging** section for fine-tuning responsiveness.
+
+### Privacy
+
+- Your API key is stored **locally** in `~/.llmautocomplete/settings.json`
+- Text around your cursor (up to 500 chars each side) is sent to your chosen API
+- **No telemetry, no tracking, no third-party servers**
+- For full privacy, use Ollama -- everything stays on your machine
+
+## Requirements
+
+- LibreOffice 7.x+ (Writer)
+- An API key (or Ollama for free local use)
+
+## Building from Source
 
 ```bash
 git clone https://github.com/5TuX/libreoffice-llm-autocomplete.git
 cd libreoffice-llm-autocomplete
 bash build.sh
-# Then install LLMAutocomplete.oxt via Extension Manager or:
-# unopkg add LLMAutocomplete.oxt
+# Install the built extension:
+unopkg add LLMAutocomplete.oxt
 ```
 
-## Setup
+## Technical Details
 
-1. Open Writer, go to **View > Sidebar**
-2. Click the **LLM Autocomplete** panel
-3. Expand **API Settings**, enter your API key and model name
-4. Click **Save Settings**
-5. Start typing -- suggestions appear after a brief pause
+<details>
+<summary>Click to expand</summary>
 
-### Supported Providers
+### How suggestions work
 
-| Provider | Base URL | Model example | API key |
-|----------|----------|---------------|---------|
-| **Anthropic Claude** (recommended) | `https://api.anthropic.com/v1` | `claude-haiku-4-5-20251001` | [console.anthropic.com](https://console.anthropic.com) |
-| **OpenAI** | `https://api.openai.com/v1` | `gpt-4o-mini` | [platform.openai.com](https://platform.openai.com) |
-| **Ollama** (free, local) | `http://localhost:11434/v1` | `llama3` | Leave blank |
-| **Any OpenAI-compatible** | Your endpoint URL | Your model name | Your key |
+1. You type text -- a debounce timer waits 600ms after your last keystroke
+2. Text before and after your cursor is sent to the LLM API (continue prompt if cursor is at end, infill prompt if mid-document)
+3. The suggestion comes back and is inserted as styled ghost text
+4. You accept, dismiss, or keep typing through it
 
-### Sidebar Settings
+### Architecture
 
-| Setting | Default | What it does |
-|---------|---------|--------------|
-| API Key | -- | Your provider's API key |
-| Model | `claude-haiku-4-5-20251001` | Model name to use |
-| Base URL | `https://api.anthropic.com/v1` | API endpoint |
-| Max tokens | 80 | Maximum tokens per suggestion |
-| Max context chars | 500 | How many characters before/after cursor to send |
-| Single sentence | On | Truncate suggestions after first sentence |
+Ghost text is implemented as real characters with a custom `CharacterStyle` (gray italic). The extension uses three UNO mechanisms to handle input:
 
-### Timer Settings (Debugging section)
-
-| Setting | Default | What it does |
-|---------|---------|--------------|
-| Debounce | 600 ms | Wait after last keystroke before querying the API |
-| Advance timer | 20 ms | Time window to suppress deferred events during type-through |
-| Poll drain | 300 ms | Interval for checking the suggestion queue |
-| Poll drain init | 1000 ms | Initial delay before first poll |
-| Status poll | 500 ms | Interval for updating the sidebar status label |
-| Status poll init | 2000 ms | Initial delay before first status poll |
-
-### Privacy
-
-- API key stored **locally only** in `~/.llmautocomplete/settings.json`
-- Text context (up to 500 chars before and after cursor) is sent to your configured API endpoint
-- **No telemetry, no data collection, no third-party servers**
-- For maximum privacy, use Ollama (everything stays on your machine)
-
-## Requirements
-
-- LibreOffice 7.x+ (Writer)
-- Windows, macOS, or Linux
-- Internet access (or local LLM via Ollama)
-- API key from Anthropic, OpenAI, or compatible provider
-
-## How It Works (Technical)
-
-### Ghost text
-
-Suggestions are inserted as real characters styled with a custom `CharacterStyle` ("LLMSuggestion" -- gray italic). The view cursor stays before the ghost text so the user can keep typing normally. When accepted, the style is reset to match surrounding text; when dismissed, the characters are deleted.
-
-### Suggestion lifecycle
-
-```
-User types → modified() fires → debounce timer starts (600ms)
-  → timer fires → _fire_request() on background thread
-  → get prefix (text before cursor) + suffix (text after cursor)
-  → call LLM API with appropriate prompt (continue vs infill)
-  → push suggestion to queue
-  → drain_queue() on main thread checks staleness, inserts ghost
-```
-
-### Input interception
-
-| Mechanism | Used for | Why |
-|-----------|----------|-----|
-| `XModifyListener` | Detect typing, trigger suggestions | Reliable for all text changes |
-| `XDispatchProviderInterceptor` | Right Arrow accept, navigation dismiss | Only way to intercept `.uno:GoRight` on Windows LO |
-| `XKeyHandler` | Escape dismiss, Ctrl+Right word accept | Escape works here; Ctrl+Right dispatch never fires on Windows |
-
-### Key technical challenges solved
-
-- **Style leak prevention**: `setPropertyToDefault("CharStyleName")` on the remove path only -- preserves user formatting (bold, color)
-- **Ghost advance (type-through)**: flag+timer guard (20ms) blocks deferred `modified()` events after re-inserting shortened ghost
-- **Right Arrow interception**: `XKeyHandler` never receives Right Arrow in LO Writer on Windows; `XDispatchProviderInterceptor` for `.uno:GoRight` is the only way
-- **Ctrl+Right interception**: `.uno:GoWordRight` dispatch never fires on Windows LO; handled via `keyPressed` (reports as keyCode=1027 with Ctrl modifier)
-- **UNO module isolation**: Python UNO components load in isolated namespaces; shared state via `sys._llmac_handler`
-- **Stale suggestion guard**: saves context prefix at API request time; at insertion time, verifies current prefix still starts with saved prefix (allows forward typing, rejects cursor jumps)
-- **Bidirectional context**: sends text after cursor as suffix; uses infill system prompt when suffix exists, continue prompt when cursor is at end
+- `XModifyListener` -- detects document changes to trigger suggestions
+- `XDispatchProviderInterceptor` -- intercepts Right Arrow and navigation commands
+- `XKeyHandler` -- handles Escape and Ctrl+Right
 
 ### Extension structure
 
 ```
 LLMAutocomplete.oxt (ZIP)
-├── META-INF/manifest.xml        # declares Python components + config files
-├── description.xml              # extension metadata
-├── Jobs.xcu                     # startup job registration
-├── Factory.xcu                  # sidebar panel factory
-├── Sidebar.xcu                  # sidebar deck/panel declaration
-├── empty_dialog.xdl             # empty dialog for panel container
-├── images/icon.png              # sidebar icon
+├── META-INF/manifest.xml
+├── description.xml
+├── Jobs.xcu, Factory.xcu, Sidebar.xcu
+├── images/icon.png
 └── python/
-    ├── LLMAutoComplete.py       # core: handler, ghost text, dispatch interceptors
-    ├── SidebarPanel.py          # sidebar UI: settings, status, controls
+    ├── LLMAutoComplete.py          # core logic
+    ├── SidebarPanel.py             # sidebar UI
     └── pythonpath/
-        ├── llm_client.py        # LLM API client (Anthropic + OpenAI-compatible)
-        └── settings_store.py    # JSON settings persistence
+        ├── llm_client.py           # API client
+        └── settings_store.py       # settings persistence
 ```
 
-## Development
+### Debug log
 
 ```bash
-# Build extension
-bash build.sh
-
-# Install (removes old version first)
-unopkg remove com.example.llmautocomplete 2>/dev/null
-unopkg add LLMAutocomplete.oxt
-
-# Launch Writer
-soffice --writer
-
-# Debug log
 tail -f ~/llmautocomplete_debug.log
 ```
+
+</details>
 
 ## License
 
