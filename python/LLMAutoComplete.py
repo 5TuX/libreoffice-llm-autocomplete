@@ -425,12 +425,9 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 return
             ctrl = doc.getCurrentController()
             vc = ctrl.getViewCursor()
-            if self._ghost_cursor is not None:
-                gc = self._ghost_cursor
-            else:
-                text_obj = doc.getText()
-                gc = text_obj.createTextCursorByRange(vc.getStart())
-                gc.goRight(self._ghost_len, True)
+            text_obj = doc.getText()
+            gc = text_obj.createTextCursorByRange(vc.getStart())
+            gc.goRight(self._ghost_len, True)
             self._ensure_ai_style(doc)
             gc.setPropertyValue("CharStyleName", AI_STYLE)
             # Restore saved color on the accepted text AND view cursor

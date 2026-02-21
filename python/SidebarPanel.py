@@ -450,6 +450,16 @@ def build_panel_ui(panelWin, panel):
         h = _get_handler()
         if h is not None:
             h.set_ai_highlight(enabled)
+            # Nudge zoom +1/-1 to force LO to redraw all styled chars immediately
+            try:
+                doc = h._get_doc()
+                if doc:
+                    vs = doc.getCurrentController().ViewSettings
+                    z = vs.ZoomValue
+                    vs.ZoomValue = z + 1
+                    vs.ZoomValue = z
+            except Exception:
+                pass
 
     try:
         panelWin.getControl("chk_highlight_ai").addItemListener(
