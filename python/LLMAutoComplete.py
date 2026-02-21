@@ -106,6 +106,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         self._saved_color = None
         self._debounce_context = None
         self._request_context = None
+        self._request_prefix = None   # full prefix at request time (for lookback)
         self._accepted_words = []  # stack of accepted word strings for Ctrl+Left undo
         self._cleanup_next_char = False  # strip AI style from the next typed char
         self._rebuild_client()
@@ -586,6 +587,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             if client is None:
                 return
             self._request_context = prefix
+            self._request_prefix = self._get_prefix_text()
             self._querying = True
             self._last_error = ""
             self._update_status_label()
@@ -609,10 +611,27 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
         while not self._ui_queue.empty():
             try:
                 suggestion = self._ui_queue.get_nowait()
-                current_ctx = self._get_context_text()
-                if self._request_context and not current_ctx.startswith(self._request_context):
-                    _log("Discarding suggestion: cursor moved since request")
+                current_prefix = self._get_prefix_text()
+
+                # Staleness: current text must extend from the request prefix
+                req_prefix = self._request_prefix or ""
+                if req_prefix and not current_prefix.startswith(req_prefix):
+                    _log("Discarding suggestion: cursor diverged since request")
                     continue
+
+                # Lookback: trim suggestion by chars user typed since the request
+                typed_since = current_prefix[len(req_prefix):] if req_prefix else ""
+                if typed_since:
+                    if suggestion.startswith(typed_since):
+                        _log("Lookback: skipped %d chars already typed" % len(typed_since))
+                        suggestion = suggestion[len(typed_since):]
+                        if not suggestion:
+                            _log("Lookback: suggestion fully consumed, discarding")
+                            continue
+                    else:
+                        _log("Discarding suggestion: typed chars don't match start")
+                        continue
+
                 if self._ghost_len > 0:
                     self._remove_ghost()
                 self._accepted_words = []
