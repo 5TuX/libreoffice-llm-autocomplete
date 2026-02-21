@@ -445,26 +445,26 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
 
     def _fire_request(self):
         try:
-            context_text = self._get_context_text()
-            if not context_text.strip():
+            prefix, suffix = self._get_context_pair()
+            if not prefix.strip():
                 return
             # Skip if cursor moved since debounce was set
-            if context_text != self._debounce_context:
+            if prefix != self._debounce_context:
                 _log("Skipping: cursor moved since debounce")
                 return
             # Don't suggest if last char is sentence punctuation (but allow if followed by space)
-            if context_text[-1:] in ".!?":
+            if prefix[-1:] in ".!?":
                 _log("Skipping: context ends with sentence punctuation")
                 return
             with self._lock:
                 client = self._client
             if client is None:
                 return
-            self._request_context = context_text
+            self._request_context = prefix
             self._querying = True
             self._last_error = ""
             self._update_status_label()
-            suggestion = client.complete(context_text)
+            suggestion = client.complete(prefix, suffix)
             self._querying = False
             self._query_count += 1
             self._update_status_label()
@@ -537,6 +537,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             return ""
 
     def _get_context_text(self):
+        """Return text before cursor (prefix only, for staleness checks)."""
         try:
             doc = self._get_doc()
             if doc is None:
@@ -551,6 +552,28 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             return full_text[-max_chars:]
         except Exception:
             return ""
+
+    def _get_context_pair(self):
+        """Return (prefix, suffix) around cursor for bidirectional context."""
+        try:
+            doc = self._get_doc()
+            if doc is None:
+                return ("", "")
+            ctrl = doc.getCurrentController()
+            vc = ctrl.getViewCursor()
+            text_obj = doc.getText()
+            max_chars = self.settings.get("MaxContextChars", 500)
+            # Prefix
+            pre_cursor = text_obj.createTextCursorByRange(vc.getStart())
+            pre_cursor.gotoStart(True)
+            prefix = pre_cursor.getString()[-max_chars:]
+            # Suffix
+            suf_cursor = text_obj.createTextCursorByRange(vc.getStart())
+            suf_cursor.gotoEnd(True)
+            suffix = suf_cursor.getString()[:max_chars]
+            return (prefix, suffix)
+        except Exception:
+            return ("", "")
 
     def _ensure_ghost_style(self, doc, color=None):
         try:
