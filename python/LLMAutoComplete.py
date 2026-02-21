@@ -179,7 +179,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                     else:
                         _log("DISMISS ghost (Ctrl+Left, stack empty)")
                         self._remove_ghost()
-                        self._last_text = self._get_full_text()
+                        self._last_text = self._get_prefix_text()
                         return False  # let default Ctrl+Left navigation happen
                 if key == KEY_TAB and (mods & MOD_CTRL):
                     _log("ACCEPT ghost (Ctrl+Tab)")
@@ -188,7 +188,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 if key == KEY_ESCAPE:
                     _log("DISMISS ghost (Escape)")
                     self._remove_ghost()
-                    self._last_text = self._get_full_text()
+                    self._last_text = self._get_prefix_text()
                     return True
             return False
         except Exception as e:
@@ -228,8 +228,9 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             if doc is None:
                 return
             current_ghost = self._ghost_text
+            self._ghost_cursor = None  # force position-based removal; stored cursor absorbs typed chars
             self._remove_ghost()
-            new_text = self._get_full_text()
+            new_text = self._get_prefix_text()
             old_text = self._last_text
             if not old_text or not new_text:
                 self._reset_debounce()
@@ -379,7 +380,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 except Exception:
                     pass
             _log("Ghost text accepted: %d chars" % self._ghost_len)
-            self._last_text = self._get_full_text()
+            self._last_text = self._get_prefix_text()
         except Exception as e:
             _log("_accept_ghost ERROR: %s" % traceback.format_exc())
         finally:
@@ -431,7 +432,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             text_obj = doc.getText()
             ins_cursor = text_obj.createTextCursorByRange(vc.getStart())
             text_obj.insertString(ins_cursor, accepted, False)
-            self._last_text = self._get_full_text()
+            self._last_text = self._get_prefix_text()
             _log("Ghost word accepted: %r (%d chars), remaining: %d" % (
                 accepted, word_len, len(remaining)))
         except Exception as e:
@@ -467,7 +468,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             del_cursor = text_obj.createTextCursorByRange(vc.getStart())
             del_cursor.goLeft(len(word), True)
             del_cursor.setString("")
-            self._last_text = self._get_full_text()
+            self._last_text = self._get_prefix_text()
             _log("Ghost word un-accepted: %r, new ghost: %d chars" % (word, len(word) + len(remaining)))
         except Exception as e:
             _log("_unaccept_ghost_word ERROR: %s" % traceback.format_exc())
@@ -544,7 +545,7 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
                 if self._ghost_len > 0:
                     self._remove_ghost()
                 self._accepted_words = []
-                self._last_text = self._get_full_text()
+                self._last_text = self._get_prefix_text()
                 self._insert_ghost(suggestion)
             except queue.Empty:
                 break
@@ -586,6 +587,21 @@ class AutoCompleteHandler(unohelper.Base, XModifyListener, XKeyHandler):
             cursor = text_obj.createTextCursor()
             cursor.gotoStart(False)
             cursor.gotoEnd(True)
+            return cursor.getString()
+        except Exception:
+            return ""
+
+    def _get_prefix_text(self):
+        """Return all text before cursor (for write-through comparison)."""
+        try:
+            doc = self._get_doc()
+            if doc is None:
+                return ""
+            ctrl = doc.getCurrentController()
+            vc = ctrl.getViewCursor()
+            text_obj = doc.getText()
+            cursor = text_obj.createTextCursorByRange(vc.getStart())
+            cursor.gotoStart(True)
             return cursor.getString()
         except Exception:
             return ""
@@ -902,7 +918,7 @@ class DocumentEventListener(unohelper.Base, XEventListener):
                 doc.addModifyListener(self.handler)
                 self._registered_docs.add(doc_id)
                 self.handler._doc_ref = doc
-                self.handler._last_text = self.handler._get_full_text()
+                self.handler._last_text = self.handler._get_prefix_text()
                 _log("XModifyListener registered on doc (%s), id=%d" % (reason, doc_id))
 
             ctrl = doc.getCurrentController()

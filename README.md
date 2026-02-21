@@ -7,7 +7,8 @@ AI-powered writing suggestions for LibreOffice Writer, similar to GitHub Copilot
 ## Features
 
 - **Inline suggestions** -- gray italic text appears at your cursor as you type
-- **Accept all or word-by-word** -- grab the whole suggestion or just the next word
+- **Accept all or word-by-word** -- grab the whole suggestion or scrub through it word by word
+- **Undo word accept** -- went too far? Ctrl+Left puts words back into the suggestion
 - **Type-through** -- keep typing and the suggestion shrinks to match
 - **Context-aware** -- uses text before *and* after your cursor for smarter suggestions
 - **Works with any provider** -- Claude, ChatGPT, Ollama (free & local), or any compatible API
@@ -15,14 +16,18 @@ AI-powered writing suggestions for LibreOffice Writer, similar to GitHub Copilot
 
 ## Keyboard Shortcuts
 
-| Action | Key |
-|--------|-----|
-| Accept entire suggestion | **Right Arrow** |
-| Accept next word | **Ctrl+Right** |
-| Dismiss suggestion | **Escape** |
-| Type through | Just keep typing |
+When a suggestion is visible (gray italic text):
 
-Any navigation key (arrows, Home, End) automatically dismisses the suggestion.
+| Key | Action |
+|-----|--------|
+| **→** (Right Arrow) | Accept entire suggestion |
+| **Ctrl+→** | Accept next word |
+| **Ctrl+←** | Un-accept last word (put it back into suggestion) |
+| **Esc** | Dismiss suggestion |
+| **Any character** | If it matches the suggestion start, the suggestion shrinks (type-through). Otherwise, dismisses and types normally. |
+| **←  ↑  ↓  Home  End** | Dismiss suggestion and navigate normally |
+
+You can hold **Ctrl** and scrub **→ / ←** to move the accept boundary back and forth through the suggestion words before committing.
 
 ## Install
 
@@ -99,7 +104,7 @@ Ghost text is implemented as real characters with a custom `CharacterStyle` (gra
 
 - `XModifyListener` -- detects document changes to trigger suggestions
 - `XDispatchProviderInterceptor` -- intercepts Right Arrow and navigation commands
-- `XKeyHandler` -- handles Escape and Ctrl+Right
+- `XKeyHandler` -- handles Escape, Ctrl+Right (accept word), and Ctrl+Left (un-accept word)
 
 ### Extension structure
 
